@@ -12,6 +12,12 @@
 #include "QskGradientDirection.h"
 #include "QskFillNodePrivate.h"
 
+static inline bool qskHasBorder( 
+    const QskBoxBorderMetrics& metrics, const QskBoxBorderColors& colors )
+{
+    return !metrics.isNull() && colors.isVisible();
+}
+
 class QskBoxRectangleNodePrivate final : public QskFillNodePrivate
 {
   public:
@@ -21,7 +27,7 @@ class QskBoxRectangleNodePrivate final : public QskFillNodePrivate
         node->resetGeometry();
     }
 
-    bool updateMetrics( const QRectF& rect,
+    inline bool updateMetrics( const QRectF& rect,
         const QskBoxShapeMetrics& shape, const QskBoxBorderMetrics& borderMetrics )
     {
         QskHashValue hash = 13000;
@@ -30,10 +36,11 @@ class QskBoxRectangleNodePrivate final : public QskFillNodePrivate
         hash = shape.hash( hash );
         hash = borderMetrics.hash( hash );
 
-        return updateValue( m_metricsHash, hash );
+        return updateHash( m_metricsHash, hash );
     }
 
-    bool updateColors( const QskBoxBorderColors& borderColors, const QskGradient& gradient )
+    inline bool updateColors(
+        const QskBoxBorderColors& borderColors, const QskGradient& gradient )
     {
         QskHashValue hash = 13000;
 
@@ -43,11 +50,11 @@ class QskBoxRectangleNodePrivate final : public QskFillNodePrivate
         if ( gradient.isVisible() )
             hash = gradient.hash( hash );
 
-        return updateValue( m_colorsHash, hash );
+        return updateHash( m_colorsHash, hash );
     }
 
   private:
-    inline bool updateValue( QskHashValue& value, const QskHashValue newValue ) const
+    inline bool updateHash( QskHashValue& value, const QskHashValue newValue ) const
     {
         if ( newValue != value )
         {
@@ -96,17 +103,19 @@ void QskBoxRectangleNode::updateFilling( const QRectF& rect,
         return;
     }
 
-    const auto fillGradient = gradient.effectiveGradient();
+    const auto fillGradient = QskBoxRenderer::effectiveGradient( gradient );
     const auto shape = shapeMetrics.toAbsolute( rect.size() );
 
     const bool coloredGeometry = hasHint( PreferColoredGeometry )
         && QskBoxRenderer::isGradientSupported( fillGradient );
 
-    const bool dirtyMetrics = d->updateMetrics( rect, shape, borderMetrics );
-    const bool dirtyColors = d->updateColors( QskBoxBorderColors(), fillGradient )
-        && ( coloredGeometry == isGeometryColored() );
+    bool dirtyGeometry = d->updateMetrics( rect, shape, borderMetrics );
+    bool dirtyMaterial = d->updateColors( QskBoxBorderColors(), fillGradient );
 
-    if ( dirtyMetrics || dirtyColors )
+    if ( coloredGeometry != isGeometryColored() )
+        dirtyGeometry = dirtyMaterial = true;
+
+    if ( dirtyGeometry || dirtyMaterial )
     {
         if ( coloredGeometry )
         {
@@ -119,18 +128,9 @@ void QskBoxRectangleNode::updateFilling( const QRectF& rect,
         }
         else
         {
-            if ( fillGradient.isMonochrome() )
-            {
-                if ( dirtyColors )
-                    setColoring( fillGradient.rgbStart() );
-            }
-            else
-            {
-                // dirtyMetrics: the shader also depends on rect !
-                setColoring( rect, fillGradient );
-            }
+            setColoring( rect, fillGradient );
 
-            if ( dirtyMetrics )
+            if ( dirtyGeometry )
             {
                 QskBoxRenderer::setFillLines(
                     rect, shape, borderMetrics, *geometry() );
@@ -147,28 +147,44 @@ void QskBoxRectangleNode::updateBorder( const QRectF& rect,
 {
     Q_D( QskBoxRectangleNode );
 
-    if ( rect.isEmpty() || borderMetrics.isNull() || !borderColors.isVisible() )
+    if ( rect.isEmpty() || !qskHasBorder( borderMetrics, borderColors ) )
     {
         d->resetNode( this );
         return;
     }
 
-    const bool dirtyMetrics = d->updateMetrics( rect, shape, borderMetrics );
-    const bool dirtyColors = d->updateColors( borderColors, QskGradient() );
+    const bool coloredGeometry = hasHint( PreferColoredGeometry )
+        || !borderColors.isMonochrome();
 
-    if ( dirtyMetrics || dirtyColors )
+    bool dirtyGeometry = d->updateMetrics( rect, shape, borderMetrics );
+    bool dirtyMaterial = d->updateColors( borderColors, QskGradient() );
+
+    if ( coloredGeometry != isGeometryColored() )
+        dirtyGeometry = dirtyMaterial = true;
+
+    if ( dirtyGeometry || dirtyMaterial )
     {
-        const auto coloring = QskFillNode::Polychrome;
+        if ( coloredGeometry )
+        {
+            setColoring( QskFillNode::Polychrome );
 
-        if ( coloring == QskFillNode::Polychrome )
-            setColoring( coloring );
+            QskBoxRenderer::setColoredBorderLines( rect, shape,
+                borderMetrics, borderColors, *geometry() );
+
+            markDirty( QSGNode::DirtyGeometry );
+        }
         else
+        {
             setColoring( borderColors.left().rgbStart() );
 
-        QskBoxRenderer::setColoredBorderLines( rect, shape, borderMetrics,
-            borderColors, *this->geometry() );
+            if ( dirtyGeometry )
+            {
+                QskBoxRenderer::setBorderLines( rect, shape,
+                    borderMetrics, *geometry() );
 
-        markDirty( QSGNode::DirtyGeometry );
+                markDirty( QSGNode::DirtyGeometry );
+            }
+        }
     }
 }
 
@@ -185,23 +201,23 @@ void QskBoxRectangleNode::updateBox( const QRectF& rect,
     }
 
     const bool hasFill = gradient.isVisible();
-    const bool hasBorder = !borderMetrics.isNull() && borderColors.isVisible();
+    const bool hasBorder = qskHasBorder( borderMetrics, borderColors );
 
     if ( hasFill && hasBorder )
     {
-        const bool dirtyMetrics = d->updateMetrics( rect, shape, borderMetrics );
-        const bool dirtyColors = d->updateColors( borderColors, gradient );
+        const bool isDirty = d->updateMetrics( rect, shape, borderMetrics )
+            || d->updateColors( borderColors, gradient ) || !isGeometryColored();
 
-        if ( dirtyMetrics || dirtyColors )
+        if ( isDirty )
         {
             /*
-                For monochrome border/fiiling with the same color we might be
+                For monochrome border/filling with the same color we might be
                 able to do QskFillNode::Monochrome. However this is not implemeted in
                 QskBoxRenderer yet. TODO ...
              */
             setColoring( QskFillNode::Polychrome );
 
-            auto fillGradient = gradient.effectiveGradient();
+            auto fillGradient = QskBoxRenderer::effectiveGradient( gradient );
             if ( !QskBoxRenderer::isGradientSupported( fillGradient ) )
             {
                 qWarning() << "QskBoxRenderer does not support radial/conic gradients";

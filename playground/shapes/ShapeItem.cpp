@@ -185,7 +185,7 @@ void ShapeItem::updateNode( QSGNode* parentNode )
 #endif
 
         const auto transform = ::transformForRects( pathRect, fillRect );
-        fillNode->updateNode( m_data->path, transform, fillRect, m_data->gradient );
+        fillNode->updatePath( m_data->path, transform, fillRect, m_data->gradient );
     }
     else
     {
@@ -221,7 +221,7 @@ void ShapeItem::updateNode( QSGNode* parentNode )
         }
 
         const auto transform = ::transformForRects( pathRect, rect );
-        borderNode->updateNode( m_data->path, transform, pen );
+        borderNode->updatePath( m_data->path, transform, pen );
     }
     else
     {

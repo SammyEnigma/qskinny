@@ -13,6 +13,7 @@
 #include "QskShadowMetrics.h"
 #include "QskBoxBorderMetrics.h"
 #include "QskBoxBorderColors.h"
+#include "QskRgbValue.h"
 
 namespace
 {
@@ -67,31 +68,43 @@ void QskBoxNode::updateNode( const QRectF& rect,
     QskBoxRectangleNode* rectNode = nullptr;
     QskBoxRectangleNode* fillNode = nullptr;
 
-    if ( !shadowMetrics.isNull()
-        && shadowColor.isValid() && shadowColor.alpha() != 0 )
+    if ( !rect.isEmpty() )
     {
-        shadowNode = qskNode< QskBoxShadowNode >( this, ShadowRole );
-        shadowNode->setShadowData( shadowMetrics.shadowRect( rect ),
-            shape, shadowMetrics.blurRadius(), shadowColor );
-    }
+        const auto hasFilling = gradient.isVisible();
+        const auto hasBorder = !borderMetrics.isNull() && borderColors.isVisible();
 
-    if ( QskBoxRectangleNode::isCombinedGeometrySupported( gradient ) )
-    {
-        rectNode = qskNode< QskBoxRectangleNode >( this, BoxRole );
-        rectNode->updateBox( rect, shape, borderMetrics, borderColors, gradient );
-    }
-    else
-    {
-        if ( !borderMetrics.isNull() && borderColors.isVisible() )
+        const auto hasShadow = hasFilling && !shadowMetrics.isNull()
+            && QskRgb::isVisible( shadowColor );
+
+        if ( hasShadow )
         {
-            rectNode = qskNode< QskBoxRectangleNode >( this, BoxRole );
-            rectNode->updateBorder( rect, shape, borderMetrics, borderColors );
+            shadowNode = qskNode< QskBoxShadowNode >( this, ShadowRole );
+            shadowNode->setShadowData( shadowMetrics.shadowRect( rect ),
+                shape, shadowMetrics.blurRadius(), shadowColor );
         }
 
-        if ( gradient.isVisible() )
+        if ( hasBorder || hasFilling )
         {
-            fillNode = qskNode< QskBoxRectangleNode >( this, FillRole );
-            fillNode->updateFilling( rect, shape, borderMetrics, gradient );
+            rectNode = qskNode< QskBoxRectangleNode >( this, BoxRole );
+
+            if ( hasBorder && hasFilling )
+            {
+                const bool doCombine = rectNode->hasHint( QskFillNode::PreferColoredGeometry )
+                    && QskBoxRectangleNode::isCombinedGeometrySupported( gradient );
+
+                if ( !doCombine )
+                    fillNode = qskNode< QskBoxRectangleNode >( this, FillRole );
+            }
+                    
+            if ( fillNode )
+            {
+                rectNode->updateBorder( rect, shape, borderMetrics, borderColors );
+                fillNode->updateFilling( rect, shape, borderMetrics, gradient );
+            }
+            else
+            {
+                rectNode->updateBox( rect, shape, borderMetrics, borderColors, gradient );
+            }
         }
     }
 
