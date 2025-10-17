@@ -5,11 +5,18 @@
 
 macro(qsk_setup_Qt)
 
+    set( QT_NO_PRIVATE_MODULE_WARNING ON )
+
     # relying on cmake heuristics to select a specific Qt version is no good idea.
     # using -DCMAKE_PREFIX_PATH="..." is highly recommended
     find_package(QT "5.15" NAMES Qt6 Qt5 REQUIRED COMPONENTS Quick)
 
     if(QT_VERSION_MAJOR VERSION_GREATER_EQUAL 6)
+
+        if(QT_VERSION_MINOR VERSION_GREATER_EQUAL 10)
+            find_package(Qt6 REQUIRED COMPONENTS OpenGLPrivate)
+        endif()
+
         # we need the qsb tool for Qt6
         find_package(Qt6 REQUIRED COMPONENTS ShaderTools)
     endif()
@@ -70,7 +77,18 @@ macro(qsk_setup_Qt)
                 OPTIONAL_COMPONENTS QuickShapesPrivate)
 
             find_package(Qt${QT_VERSION_MAJOR} QUIET
-                OPTIONAL_COMPONENTS QuickDialogs2Utils QuickDialogs2 )
+                OPTIONAL_COMPONENTS QuickDialogs2 )
+
+            if( Qt${QT_VERSION_MAJOR}QuickDialogs2_FOUND)
+                find_package(Qt${QT_VERSION_MAJOR} QUIET
+                    OPTIONAL_COMPONENTS QuickDialogs2UtilsPrivate )
+
+                if(QT_VERSION_MINOR VERSION_GREATER_EQUAL 10)
+                    find_package(Qt${QT_VERSION_MAJOR} QUIET
+                        OPTIONAL_COMPONENTS QuickDialogs2Private QuickTemplates2Private )
+                endif()
+            endif()
+
         endif()
 
         if( NOT Qt${QT_VERSION_MAJOR}WebEngineQuick_FOUND)
