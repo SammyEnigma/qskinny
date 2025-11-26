@@ -14,7 +14,7 @@ macro(qsk_setup_Qt)
     if(QT_VERSION_MAJOR VERSION_GREATER_EQUAL 6)
 
         if(QT_VERSION_MINOR VERSION_GREATER_EQUAL 10)
-            find_package(Qt6 REQUIRED COMPONENTS OpenGLPrivate)
+            find_package(Qt6 REQUIRED COMPONENTS CorePrivate QuickPrivate OpenGLPrivate)
         endif()
 
         # we need the qsb tool for Qt6
