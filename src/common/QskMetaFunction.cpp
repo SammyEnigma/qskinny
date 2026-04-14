@@ -213,14 +213,9 @@ void QskMetaFunction::invoke( QObject* object,
 
             auto event = new QMetaCallEvent(
                 m_functionCall, nullptr, 0, argv, &semaphore );
-#else
-            auto event = new QMetaCallEvent(
-                m_functionCall, nullptr, 0, argv, nullptr );
-#endif
 
             QCoreApplication::postEvent( receiver, event );
 
-#if QT_CONFIG(thread)
             semaphore.acquire();
 #endif
 
